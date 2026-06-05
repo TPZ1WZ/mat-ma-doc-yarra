@@ -1,0 +1,18 @@
+# --- Tầng lõi phân tích mã độc và PE ---
+pefile==2023.2.7
+lxml==5.1.0
+
+# --- Trình biên dịch và quét YARA ---
+yara-python==4.5.0
+yara-x>=1.17.0
+
+# --- Tầng giao diện và Web Server ---
+# pygame (nếu bạn dùng để phát âm thanh cảnh báo trong hệ thống)
+pygame==2.5.2
+# Giao diện Web (Flask nhẹ nhàng, phù hợp cho Server-Sent Events cục bộ)
+Flask==3.0.2
+werkzeug==3.0.1
+
+# --- Công cụ hỗ trợ xử lý dữ liệu báo cáo ---
+# Phục vụ xuất dữ liệu CSV/Heuristic cho Family DNA Lab
+pandas==2.2.1

@@ -1,0 +1,16 @@
+﻿__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.log
+reports/*.md
+reports/*.csv
+rules/*.yar
+strings_out/
+dbs/
+3rdparty/
+test_samples/
+web_workspace/
+*.tmp
+family_dna_*.md
