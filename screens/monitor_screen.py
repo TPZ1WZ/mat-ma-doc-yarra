@@ -109,17 +109,18 @@ class MonitorScreen(tk.Frame):
                   font=("Segoe UI", 9, "bold"), bg="#C0392B", fg="#FFFFFF",
                   relief="flat", bd=0, padx=15, pady=5, cursor="hand2",
                   command=self._abort_task).pack(side="left", padx=(0, 6))
-        self.preview_btn = tk.Button(
-            ctrl_grp, text="Xem Preview Luật (.yar)",
-            font=("Segoe UI", 9), bg="#16A085", fg="#FFFFFF",
-            relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
-            state="disabled", command=self._show_rule_preview
-        )
-        self.preview_btn.pack(side="left")
+        tk.Button(ctrl_grp, text="Tải lại luật",
+                  font=("Segoe UI", 9), bg="#16A085", fg="#FFFFFF",
+                  relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
+                  command=self._reload_rule_preview).pack(side="left")
 
-        # ── Console card ──────────────────────────────────────────
-        console_shadow = tk.Frame(self, bg=CARD_SHD)
-        console_shadow.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        # ── Split pane: log (left) + rule preview (right) ─────────
+        split = tk.Frame(self, bg=CONT_BG)
+        split.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        # LEFT — console log (60%)
+        console_shadow = tk.Frame(split, bg=CARD_SHD)
+        console_shadow.pack(side="left", fill="both", expand=True, padx=(0, 6))
         console_card = tk.Frame(console_shadow, bg=CARD_BG,
                                 highlightbackground=CARD_BDR, highlightthickness=1)
         console_card.pack(fill="both", expand=True, padx=(0, 2), pady=(0, 2))
@@ -153,32 +154,34 @@ class MonitorScreen(tk.Frame):
 
         self.last_log_count = 0
 
-        # ── Rule preview panel (hidden by default) ────────────────
-        self.preview_panel = tk.Frame(self, bg=CARD_SHD)
-        _prev_card = tk.Frame(self.preview_panel, bg=CARD_BG,
-                              highlightbackground=CARD_BDR, highlightthickness=1)
-        _prev_card.pack(fill="both", expand=True, padx=(0, 2), pady=(0, 2))
+        # RIGHT — rule preview (40%, always visible)
+        prev_shadow = tk.Frame(split, bg=CARD_SHD, width=520)
+        prev_shadow.pack(side="left", fill="both", padx=(0, 0))
+        prev_shadow.pack_propagate(False)
+        prev_card = tk.Frame(prev_shadow, bg=CARD_BG,
+                             highlightbackground=CARD_BDR, highlightthickness=1)
+        prev_card.pack(fill="both", expand=True, padx=(0, 2), pady=(0, 2))
 
-        _prev_hdr = tk.Frame(_prev_card, bg="#EEF3FC")
+        _prev_hdr = tk.Frame(prev_card, bg="#EEF3FC")
         _prev_hdr.pack(fill="x")
-        tk.Frame(_prev_card, bg=ACE_TEAL, height=3).place(x=0, y=0, relwidth=1)
+        tk.Frame(prev_card, bg=ACE_TEAL, height=3).place(x=0, y=0, relwidth=1)
         self._preview_title_lbl = tk.Label(
-            _prev_hdr, text="  Preview: —",
+            _prev_hdr, text="  Preview: (chờ yarGen xong...)",
             font=("Segoe UI", 9, "bold"), bg="#EEF3FC", fg="#16A085",
             anchor="w", padx=12, pady=6
         )
         self._preview_title_lbl.pack(side="left")
-        tk.Frame(_prev_card, bg=CARD_BDR, height=1).pack(fill="x")
+        tk.Frame(prev_card, bg=CARD_BDR, height=1).pack(fill="x")
 
-        _prev_body = tk.Frame(_prev_card, bg="#1E1E1E")
+        _prev_body = tk.Frame(prev_card, bg="#1E1E1E")
         _prev_body.pack(fill="both", expand=True)
         _prev_body.grid_rowconfigure(0, weight=1)
         _prev_body.grid_columnconfigure(0, weight=1)
 
         self.preview_text = tk.Text(
-            _prev_body, height=8, font=("Consolas", 8),
+            _prev_body, font=("Consolas", 8),
             bg="#1E1E1E", fg="#98C379", wrap="none", bd=0,
-            padx=8, pady=4
+            padx=8, pady=4, state="disabled"
         )
         _sb_prev = tk.Scrollbar(_prev_body, orient="vertical",
                                 command=self.preview_text.yview)
@@ -274,11 +277,21 @@ class MonitorScreen(tk.Frame):
         else:
             messagebox.showinfo("Thông báo", "Hiện tại không có tác vụ nào đang chạy.")
 
-    def _show_rule_preview(self):
-        if self.preview_panel.winfo_ismapped():
-            self.preview_panel.pack_forget()
+    def _load_rule_into_preview(self, path: str):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except Exception:
             return
+        self._preview_title_lbl.config(
+            text=f"  Preview: {os.path.basename(path)}"
+        )
+        self.preview_text.configure(state="normal")
+        self.preview_text.delete("1.0", tk.END)
+        self.preview_text.insert(tk.END, content)
+        self.preview_text.configure(state="disabled")
 
+    def _reload_rule_preview(self):
         if not self._last_output_path or not os.path.isfile(self._last_output_path):
             rules_dir = self.state.rules_dir
             yar_files = [
@@ -288,26 +301,10 @@ class MonitorScreen(tk.Frame):
             ]
             if yar_files:
                 self._last_output_path = max(yar_files, key=os.path.getmtime)
-
         if not self._last_output_path or not os.path.isfile(self._last_output_path):
             messagebox.showinfo("Thông báo", "Chưa tìm thấy file .yar nào trong thư mục rules/.")
             return
-
-        try:
-            with open(self._last_output_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-        except Exception as e:
-            messagebox.showerror("Lỗi", str(e))
-            return
-
-        self._preview_title_lbl.config(
-            text=f"  Preview: {os.path.basename(self._last_output_path)}"
-        )
-        self.preview_text.configure(state="normal")
-        self.preview_text.delete("1.0", tk.END)
-        self.preview_text.insert(tk.END, content)
-        self.preview_text.configure(state="disabled")
-        self.preview_panel.pack(fill="x", padx=20, pady=(0, 10))
+        self._load_rule_into_preview(self._last_output_path)
 
     # ─────────────────────────────────────────────────────────────
     def _poll_logs(self):
@@ -327,6 +324,9 @@ class MonitorScreen(tk.Frame):
             self._update_stats_ui()
 
         if not self.runner.is_running() and self.last_log_count > 0:
-            self.preview_btn.config(state="normal")
+            if self._last_output_path and os.path.isfile(self._last_output_path):
+                current_preview = self.preview_text.get("1.0", "1.1")
+                if not current_preview.strip():
+                    self._load_rule_into_preview(self._last_output_path)
 
         self.after(500, self._poll_logs)

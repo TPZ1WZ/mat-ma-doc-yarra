@@ -43,6 +43,8 @@ class ReportsScreen(tk.Frame):
 
         tk.Button(top_frame, text="Tải lại danh sách", font=("Segoe UI", 9), bg="#34495E", fg="#FFFFFF",
                   bd=0, padx=10, pady=4, cursor="hand2", command=self._refresh_reports_list).pack(side="left")
+        tk.Button(top_frame, text="Xóa file đã chọn", font=("Segoe UI", 9), bg="#C0392B", fg="#FFFFFF",
+                  bd=0, padx=10, pady=4, cursor="hand2", command=self._delete_selected_file).pack(side="left", padx=6)
         tk.Label(top_frame, text="(Hiển thị file .md, .csv, .yar trong reports/ và rules/)",
                  font=("Segoe UI", 8, "italic"), bg=CONT_BG, fg="#95A5A6").pack(side="left", padx=8)
 
@@ -77,6 +79,26 @@ class ReportsScreen(tk.Frame):
             self.files_listbox.insert(tk.END, label)
             self.files_listbox._paths = getattr(self.files_listbox, "_paths", [])
             self.files_listbox._paths.append(os.path.join(directory, fname))
+
+    def _delete_selected_file(self):
+        sel = self.files_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Thông báo", "Chưa chọn file nào.")
+            return
+        idx = sel[0]
+        paths = getattr(self.files_listbox, "_paths", [])
+        if idx >= len(paths):
+            return
+        full_path = paths[idx]
+        fname = os.path.basename(full_path)
+        if not messagebox.askyesno("Xác nhận xóa", f"Bạn có chắc muốn xóa file:\n{fname}?"):
+            return
+        try:
+            os.remove(full_path)
+            self.viewer_text.delete("1.0", tk.END)
+            self._refresh_reports_list()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể xóa file: {str(e)}")
 
     def _on_file_selected(self, event):
         sel = self.files_listbox.curselection()
