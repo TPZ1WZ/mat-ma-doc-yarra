@@ -205,7 +205,26 @@ class AnalyzeScreen(tk.Frame):
 
     def _build_batch_tab(self):
         tab = self._tab_batch
-        self.batch_tree = ttk.Treeview(tab, columns=("name", "size", "entropy", "risk", "behaviors", "sha256"), show="headings")
+
+        # Bottom bar (pack first so treeview fills remaining space)
+        bottom = tk.Frame(tab, bg=CARD_BG)
+        bottom.pack(side="bottom", fill="x", pady=(2, 0))
+        self.batch_summary_var = tk.StringVar(value="")
+        tk.Label(bottom, textvariable=self.batch_summary_var,
+                 font=("Segoe UI", 9, "italic"), bg=CARD_BG, fg=TEXT_M).pack(side="left", padx=8)
+        tk.Button(bottom, text="Xuất kết quả CSV", font=("Segoe UI", 9), bg="#27AE60", fg="#FFFFFF",
+                  bd=0, padx=10, pady=4, cursor="hand2",
+                  command=self._export_batch_csv).pack(side="right", padx=8, pady=2)
+
+        # Treeview + scrollbars
+        tree_frame = tk.Frame(tab, bg=CARD_BG)
+        tree_frame.pack(side="top", fill="both", expand=True)
+
+        self.batch_tree = ttk.Treeview(
+            tree_frame,
+            columns=("name", "size", "entropy", "risk", "behaviors", "sha256"),
+            show="headings"
+        )
         self.batch_tree.heading("name",      text="Tên file")
         self.batch_tree.heading("size",      text="Kích thước")
         self.batch_tree.heading("entropy",   text="Entropy")
@@ -213,26 +232,21 @@ class AnalyzeScreen(tk.Frame):
         self.batch_tree.heading("behaviors", text="Behaviors")
         self.batch_tree.heading("sha256",    text="SHA256")
 
-        self.batch_tree.column("name",      width=200, anchor="w")
+        self.batch_tree.column("name",      width=220, anchor="w")
         self.batch_tree.column("size",      width=90,  anchor="center")
         self.batch_tree.column("entropy",   width=80,  anchor="center")
         self.batch_tree.column("risk",      width=90,  anchor="center")
         self.batch_tree.column("behaviors", width=100, anchor="center")
-        self.batch_tree.column("sha256",    width=200, anchor="w")
+        self.batch_tree.column("sha256",    width=220, anchor="w")
 
-        sb_v = ttk.Scrollbar(tab, orient="vertical",   command=self.batch_tree.yview)
-        sb_h = ttk.Scrollbar(tab, orient="horizontal", command=self.batch_tree.xview)
+        sb_v = ttk.Scrollbar(tree_frame, orient="vertical",   command=self.batch_tree.yview)
+        sb_h = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.batch_tree.xview)
         self.batch_tree.configure(yscrollcommand=sb_v.set, xscrollcommand=sb_h.set)
 
-        self.batch_tree.pack(side="left", fill="both", expand=True, padx=(4, 0))
-        sb_v.pack(side="right", fill="y")
         sb_h.pack(side="bottom", fill="x")
-
-        self.batch_summary_var = tk.StringVar(value="")
-        tk.Label(tab, textvariable=self.batch_summary_var, font=("Segoe UI", 9, "italic"), bg=CARD_BG, fg=TEXT_M).pack(anchor="w", padx=8)
-
-        tk.Button(tab, text="Xuất kết quả CSV", font=("Segoe UI", 9), bg="#27AE60", fg="#FFFFFF",
-                  bd=0, padx=10, pady=4, cursor="hand2", command=self._export_batch_csv).pack(anchor="e", padx=8, pady=4)
+        sb_v.pack(side="right",  fill="y")
+        self.batch_tree.pack(side="left", fill="both", expand=True)
+        self.batch_tree.bind("<<TreeviewSelect>>", self._on_batch_select)
 
         self._batch_results = []
 
@@ -339,6 +353,72 @@ class AnalyzeScreen(tk.Frame):
 
         self.nb.select(0)
 
+    def _on_batch_select(self, _event=None):
+        sel = self.batch_tree.selection()
+        if not sel:
+            return
+        idx = self.batch_tree.index(sel[0])
+        if idx >= len(self._batch_results):
+            return
+        r = self._batch_results[idx]
+        print(f"[DEBUG] Selected idx={idx} file={r['file_name'][:40]} strings={len(r.get('strings',[]))}")
+        folder = self.batch_dir_var.get().strip()
+        fp = os.path.join(folder, r["file_name"])
+        if not os.path.isfile(fp):
+            # Thu tim trong subfolder
+            for root, dirs, files in os.walk(folder):
+                if r["file_name"] in files:
+                    fp = os.path.join(root, r["file_name"])
+                    break
+
+        # Cap nhat Behavior Hints tab
+        self.risk_var.set(str(r["risk_score"]))
+        self.entropy_var.set(f"Entropy: {r['entropy']}")
+        for row in self.behavior_tree.get_children():
+            self.behavior_tree.delete(row)
+        if r["behaviors"]:
+            for b in r["behaviors"]:
+                self.behavior_tree.insert("", "end", values=(b["display"], ", ".join(b["keywords"])))
+        else:
+            self.behavior_tree.insert("", "end", values=("—", "Không phát hiện hành vi đáng ngờ"))
+
+        # Cap nhat Strings tab
+        self.strings_text.delete("1.0", tk.END)
+        strings = r.get("strings", [])
+        if not strings and os.path.isfile(fp):
+            strings = self.analyzer.extract_strings(fp)
+        for s in strings[:300]:
+            self.strings_text.insert(tk.END, s + "\n")
+        if len(strings) > 300:
+            self.strings_text.insert(tk.END, f"\n... và {len(strings) - 300} chuỗi khác.\n")
+
+        # Cap nhat Tong quan tab
+        self.result_text.delete("1.0", tk.END)
+        pe = r.get("pe_details", {"is_pe": False, "sections": [], "imports": {}})
+        lines = [
+            "=== THÔNG TIN TỆP TIN ===",
+            f"Tên file    : {r['file_name']}",
+            f"Kích thước  : {format_file_size(r['file_size'])}",
+            f"SHA256      : {r['sha256']}",
+            f"Entropy     : {r['entropy']}  {'(Có thể bị pack/mã hóa!)' if r['entropy'] > 7.0 else ''}",
+            f"Behaviors   : {len(r['behaviors'])} loại phát hiện",
+            "",
+            "=== CẤU TRÚC PE ===",
+        ]
+        if pe.get("is_pe"):
+            lines.append(f"Sections ({len(pe.get('sections', []))}):")
+            for s in pe.get("sections", []):
+                lines.append(f"  - {s['name']}  (VSize: {s['virtual_size']}, RawSize: {s['raw_size']})")
+            lines.append(f"\nDLL Imports ({len(pe.get('imports', {}))}):")
+            for dll, funcs in list(pe.get("imports", {}).items())[:5]:
+                lines.append(f"  + {dll} ({len(funcs)} funcs)")
+        else:
+            lines.append("Định dạng: Không phải file PE (Script / Document / Archive...)")
+        self.result_text.insert(tk.END, "\n".join(lines))
+
+        # Switch sang tab Tong quan de hien thi ket qua
+        self.nb.select(0)
+
     # ─── Batch mode ──────────────────────────────────────────────
     def _run_batch(self):
         folder = self.batch_dir_var.get().strip()
@@ -370,6 +450,8 @@ class AnalyzeScreen(tk.Frame):
                         "entropy": entropy,
                         "risk_score": risk_score,
                         "behaviors": behaviors,
+                        "strings": res.get("strings", []),
+                        "pe_details": res.get("pe_details", {"is_pe": False, "sections": [], "imports": {}}),
                     })
                 except Exception:
                     continue
@@ -378,11 +460,11 @@ class AnalyzeScreen(tk.Frame):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _display_batch(self, results):
-        self._batch_results = results
+        self._batch_results = sorted(results, key=lambda x: x["risk_score"], reverse=True)
         for row in self.batch_tree.get_children():
             self.batch_tree.delete(row)
 
-        for r in sorted(results, key=lambda x: x["risk_score"], reverse=True):
+        for r in self._batch_results:
             risk_val = r["risk_score"]
             risk_label = "LOW"
             for threshold, label, _ in RISK_THRESHOLDS:
