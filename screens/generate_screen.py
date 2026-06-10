@@ -3,9 +3,7 @@ import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from core.state import AppState
-from core.family_signature import FamilySignatureGenerator
 from core.runner import BackgroundRunner
-from core.quality_gate import RuleDoctor
 from core.yargen_command import YarGenCommandBuilder, PRESETS
 from core.theme import *
 
@@ -42,9 +40,7 @@ class GenerateScreen(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent, bg=CONT_BG)
         self.state = AppState()
-        self.sig_generator = FamilySignatureGenerator()
         self.runner = BackgroundRunner()
-        self.doctor = RuleDoctor()
         self._advanced_mode = False
         self._build_ui()
 
@@ -52,49 +48,19 @@ class GenerateScreen(tk.Frame):
         # ── Page header ───────────────────────────────────────────────
         hdr = tk.Frame(self, bg=CONT_BG)
         hdr.pack(fill="x", padx=24, pady=(20, 4))
-        tk.Label(hdr, text="CẤU HÌNH & SINH LUẬT YARA",
+        tk.Label(hdr, text="Sinh luật Yara với YarGen",
                  font=("Segoe UI", 16, "bold"),
                  bg=CONT_BG, fg=TEXT_H).pack(side="left", anchor="w")
         tk.Frame(self, bg=CARD_BDR, height=1).pack(fill="x", padx=24, pady=(0, 16))
 
-        # ── Option 1: Quick generation ────────────────────────────────
-        body1 = _card_section(
-            self,
-            "Tùy chọn 1: Sinh luật nhanh",
-            "Dùng đặc trưng chung từ màn hình 'Quản lý họ mã độc' để đóng gói thành file .yar"
-        )
-
-        tk.Button(
-            body1, text="⚡  Sinh và Lưu Luật Nhanh",
-            font=("Segoe UI", 10, "bold"),
-            bg=ACE_BLUE, fg="#FFFFFF",
-            relief="flat", bd=0, padx=18, pady=7, cursor="hand2",
-            command=self._run_quick_generation
-        ).pack(anchor="w")
-
-        # ── Option 2: yarGen advanced ─────────────────────────────────
+        # ── yarGen advanced ───────────────────────────────────────────
         body2 = _card_section(
             self,
-            "Tùy chọn 2: Sinh luật nâng cao với yarGen.py",
+            "Sinh luật nâng cao với yarGen.py",
             "Chạy yarGen.py với preset tùy chỉnh và xem lệnh sẽ thực thi trước khi khởi chạy"
         )
 
-        # Row 1: Malware dir
-        row1 = tk.Frame(body2, bg=CARD_BG)
-        row1.pack(fill="x", pady=(0, 8))
-        tk.Label(row1, text="Thư mục họ mẫu:", font=("Segoe UI", 10),
-                 bg=CARD_BG, fg=TEXT_N, width=18, anchor="w").pack(side="left")
-        self.dir_var = tk.StringVar()
-        self.dir_var.trace_add("write", lambda *_: self._update_preview())
-        entry1 = tk.Entry(row1, textvariable=self.dir_var, font=("Segoe UI", 10),
-                          bd=1, relief="solid", highlightthickness=0)
-        entry1.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        tk.Button(row1, text="Browse…",
-                  font=("Segoe UI", 9), bg="#475569", fg="#FFFFFF",
-                  bd=0, padx=10, pady=4, cursor="hand2",
-                  command=self._browse_dir).pack(side="left")
-
-        # Row 2: Output file
+        # Row 1: Output file
         row2 = tk.Frame(body2, bg=CARD_BG)
         row2.pack(fill="x", pady=(0, 8))
         tk.Label(row2, text="File đầu ra (.yar):", font=("Segoe UI", 10),
@@ -202,9 +168,9 @@ class GenerateScreen(tk.Frame):
         btn_row.pack(fill="x")
 
         tk.Button(
-            btn_row, text="▶  Khởi Chạy yarGen Ngầm",
+            btn_row, text="▶  Bắt đầu sinh luật Yara",
             font=("Segoe UI", 10, "bold"),
-            bg=ACE_ORANGE, fg="#FFFFFF",
+            bg=ACE_GREEN, fg="#FFFFFF",
             relief="flat", bd=0, padx=18, pady=8, cursor="hand2",
             command=self._run_yargen_generation
         ).pack(side="left")
@@ -216,9 +182,8 @@ class GenerateScreen(tk.Frame):
             command=self._copy_command
         ).pack(side="left", padx=(10, 0))
 
-        # Pre-fill from state
+        # Pre-fill output path from state
         if self.state.selected_family_dir:
-            self.dir_var.set(self.state.selected_family_dir)
             family_name = os.path.basename(self.state.selected_family_dir.rstrip(r"\/"))
             safe = "".join(c if c.isalnum() else "_" for c in family_name)
             self.out_var.set(os.path.join(self.state.rules_dir, f"yargen_{safe}.yar"))
@@ -242,16 +207,6 @@ class GenerateScreen(tk.Frame):
             self.mode_btn.config(text="⚙  Advanced Mode", bg=ACE_PURPLE)
         self._update_preview()
 
-    def _browse_dir(self):
-        d = filedialog.askdirectory(title="Chọn thư mục chứa tập mẫu của họ mã độc")
-        if d:
-            self.dir_var.set(d)
-            self.state.selected_family_dir = d
-            family_name = os.path.basename(d.rstrip(r"\/"))
-            safe = "".join(c if c.isalnum() else "_" for c in family_name)
-            if not self.out_var.get():
-                self.out_var.set(os.path.join(self.state.rules_dir, f"yargen_{safe}.yar"))
-
     def _browse_out(self):
         f = filedialog.asksaveasfilename(
             title="Chọn vị trí lưu file luật YARA",
@@ -266,7 +221,7 @@ class GenerateScreen(tk.Frame):
         yargen_path = os.path.join(self.state.base_dir, "yarGen.py")
         builder = YarGenCommandBuilder(yargen_path)
         preset = self.preset_var.get()
-        malware_dir = self.dir_var.get().strip() or "<thư_mục_mẫu>"
+        malware_dir = self.state.selected_family_dir or "<thư_mục_mẫu>"
         out_path = self.out_var.get().strip() or os.path.join(self.state.rules_dir, "output.yar")
 
         if self._advanced_mode or preset == "Custom":
@@ -294,35 +249,15 @@ class GenerateScreen(tk.Frame):
         self.clipboard_append(cmd_str)
         messagebox.showinfo("Đã sao chép", "Lệnh đã được sao chép vào clipboard.")
 
-    def _run_quick_generation(self):
-        target_dir = self.state.selected_family_dir
-        if not target_dir or not os.path.exists(target_dir):
-            messagebox.showwarning("Cảnh báo",
-                                   "Vui lòng qua 'Quản lý họ mã độc' để chọn thư mục mẫu trước!")
-            return
-        res = self.sig_generator.process_family_directory(target_dir)
-        if "error" in res or not res.get("features"):
-            messagebox.showerror("Lỗi", "Không có đặc trưng chung để đóng gói thành luật YARA.")
-            return
-        rule_text = self.sig_generator.generate_yara_rule(res)
-        family_name = res["family_name"]
-        safe_name = "".join(c if c.isalnum() else "_" for c in family_name)
-        output_path = os.path.join(self.state.rules_dir, f"sig_gen_{safe_name}.yar")
-        try:
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(rule_text)
-            messagebox.showinfo("Thành công",
-                                f"Luật YARA đã được tạo và lưu tại:\n{output_path}")
-        except Exception as e:
-            messagebox.showerror("Lỗi hệ thống", f"Không thể lưu file luật: {str(e)}")
-
     def _run_yargen_generation(self):
-        malware_dir = self.dir_var.get().strip()
+        malware_dir = self.state.selected_family_dir
         out_path = self.out_var.get().strip()
 
         if not malware_dir or not os.path.isdir(malware_dir):
-            messagebox.showwarning("Cảnh báo",
-                                   "Vui lòng chọn thư mục chứa tập mẫu mã độc hợp lệ!")
+            messagebox.showwarning(
+                "Cảnh báo",
+                "Chưa chọn thư mục mẫu.\nVui lòng qua màn hình 'Family' để chọn thư mục trước!"
+            )
             return
 
         yargen_script = os.path.join(self.state.base_dir, "yarGen.py")
@@ -330,8 +265,7 @@ class GenerateScreen(tk.Frame):
             messagebox.showerror(
                 "Thiếu yarGen.py",
                 "Không tìm thấy yarGen.py trong thư mục dự án.\n\n"
-                "Hãy dùng 'Tùy chọn 1: Sinh luật nhanh' hoặc tải yarGen từ:\n"
-                "github.com/Neo23x0/yarGen"
+                "Tải yarGen từ: github.com/Neo23x0/yarGen"
             )
             return
 
@@ -341,7 +275,6 @@ class GenerateScreen(tk.Frame):
             out_path = os.path.join(self.state.rules_dir, f"yargen_{safe}.yar")
             self.out_var.set(out_path)
 
-        self.state.selected_family_dir = malware_dir
         cmd = self._build_cmd_list()
         cmd[3] = malware_dir
         cmd[5] = out_path

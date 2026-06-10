@@ -1,6 +1,16 @@
 import os
-from typing import Dict, Any
+import datetime
+from typing import Dict, Any, List
 from core.analysis_common import format_file_size, write_markdown_report
+
+_RISK_THRESHOLDS = [(5, "CRITICAL"), (3, "HIGH"), (1, "MEDIUM"), (0, "LOW")]
+
+def _risk_label(score: int) -> str:
+    for threshold, label in _RISK_THRESHOLDS:
+        if score >= threshold:
+            return label
+    return "LOW"
+
 
 class AnalystReportGenerator:
     def __init__(self):
@@ -50,3 +60,84 @@ class AnalystReportGenerator:
         # Ghi file thông qua module common
         success = write_markdown_report(report_path, f"BÁO CÁO PHÂN TÍCH TĨNH MẪU MÃ ĐỘC: {file_name}", sections)
         return report_path if success else ""
+
+    def generate_batch_report(self, batch_results: List[Dict[str, Any]],
+                               folder_path: str, report_dir: str) -> str:
+        """Tổng hợp kết quả batch scan toàn bộ folder thành 1 file Markdown duy nhất."""
+        folder_name = os.path.basename(folder_path.rstrip("/\\")) if folder_path else "batch"
+        safe_name = "".join(c if c.isalnum() else "_" for c in folder_name)
+        report_path = os.path.join(report_dir, f"batch_report_{safe_name}.md")
+        today = datetime.date.today().isoformat()
+
+        try:
+            with open(report_path, "w", encoding="utf-8") as f:
+                # ── Tiêu đề ──────────────────────────────────────────
+                f.write("# BÁO CÁO PHÂN TÍCH TĨNH BATCH\n\n")
+                f.write(f"**Thư mục phân tích:** `{folder_path}`  \n")
+                f.write(f"**Tổng số mẫu:** {len(batch_results)}  \n")
+                f.write(f"**Ngày tạo:** {today}  \n\n")
+                f.write("---\n\n")
+
+                # ── Bảng tóm tắt ─────────────────────────────────────
+                f.write("## Tóm Tắt Tất Cả Mẫu\n\n")
+                f.write("| # | Tên file | Kích thước | Entropy | Risk | Behaviors | SHA256 |\n")
+                f.write("|---|----------|-----------|---------|------|-----------|--------|\n")
+                for i, r in enumerate(batch_results, 1):
+                    sha_short = r["sha256"][:16] + "..."
+                    f.write(f"| {i} | `{r['file_name']}` | {format_file_size(r['file_size'])} "
+                            f"| {r['entropy']} | **{_risk_label(r['risk_score'])}** "
+                            f"| {len(r['behaviors'])} | `{sha_short}` |\n")
+                f.write("\n---\n\n")
+
+                # ── Chi tiết từng mẫu ────────────────────────────────
+                f.write("## Chi Tiết Từng Mẫu\n\n")
+                for i, r in enumerate(batch_results, 1):
+                    pack_warn = " ⚠ Nghi bị pack/mã hóa" if r["entropy"] > 7.0 else ""
+                    f.write(f"### {i}. {r['file_name']}\n\n")
+                    f.write("| Thuộc tính | Giá trị |\n")
+                    f.write("|------------|--------|\n")
+                    f.write(f"| SHA256 | `{r['sha256']}` |\n")
+                    f.write(f"| Kích thước | {format_file_size(r['file_size'])} |\n")
+                    f.write(f"| Entropy | {r['entropy']}{pack_warn} |\n")
+                    f.write(f"| Risk | **{_risk_label(r['risk_score'])}** |\n\n")
+
+                    # Behavior hints
+                    f.write("#### Behavior Hints\n\n")
+                    if r["behaviors"]:
+                        for b in r["behaviors"]:
+                            f.write(f"* **{b['display']}**: {', '.join(b['keywords'])}\n")
+                    else:
+                        f.write("* Không phát hiện hành vi đáng ngờ\n")
+                    f.write("\n")
+
+                    # PE structure
+                    pe = r.get("pe_details", {})
+                    f.write("#### Cấu Trúc PE\n\n")
+                    if pe.get("is_pe"):
+                        secs = pe.get("sections", [])
+                        sec_names = ", ".join(f"`{s['name']}`" for s in secs)
+                        f.write(f"* Sections ({len(secs)}): {sec_names}\n")
+                        dlls = list(pe.get("imports", {}).keys())
+                        dll_str = ", ".join(f"`{d}`" for d in dlls[:5])
+                        extra = f" ... và {len(dlls) - 5} DLL khác" if len(dlls) > 5 else ""
+                        f.write(f"* DLLs ({len(dlls)}): {dll_str}{extra}\n")
+                    else:
+                        f.write("* Không phải file PE\n")
+                    f.write("\n")
+
+                    # Top 10 strings
+                    strings = r.get("strings", [])
+                    if strings:
+                        f.write("#### Chuỗi Đặc Trưng (Top 10)\n\n")
+                        for s in strings[:10]:
+                            f.write(f"* `{s}`\n")
+                        if len(strings) > 10:
+                            f.write(f"* ... và {len(strings) - 10} chuỗi khác\n")
+                        f.write("\n")
+
+                    f.write("---\n\n")
+
+            return report_path
+        except Exception as e:
+            print(f"Lỗi khi xuất batch report: {e}")
+            return ""

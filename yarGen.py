@@ -1000,7 +1000,7 @@ def generate_general_condition(file_info):
                 imphashes.append(imphash)
 
         # If different magic headers are less than 5
-        if len(magic_headers) <= 5:
+        if 0 < len(magic_headers) <= 5:
             magic_string = " or ".join(get_uint_string(h) for h in magic_headers)
             if " or " in magic_string:
                 conditions.append("( {0} )".format(magic_string))

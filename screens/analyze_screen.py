@@ -70,6 +70,7 @@ class AnalyzeScreen(tk.Frame):
         self.analyzer = SampleAnalyzer()
         self.report_gen = AnalystReportGenerator()
         self.last_analysis_result = None
+        self._batch_results = []
         self._build_ui()
 
     def _build_ui(self):
@@ -255,9 +256,13 @@ class AnalyzeScreen(tk.Frame):
         if self.mode_var.get() == "single":
             self.batch_frame.pack_forget()
             self.single_frame.pack(fill="x", padx=20, pady=(0, 8), before=self.nb)
+            self.btn_export.config(text="Xuất Báo Cáo (.md)",
+                                   state="normal" if self.last_analysis_result else "disabled")
         else:
             self.single_frame.pack_forget()
             self.batch_frame.pack(fill="x", padx=20, pady=(0, 8), before=self.nb)
+            self.btn_export.config(text="Xuất Báo Cáo Batch (.md)",
+                                   state="normal" if self._batch_results else "disabled")
 
     def _browse_file(self):
         path = filedialog.askopenfilename(title="Chọn mẫu mã độc cần phân tích", filetypes=[("All Files", "*.*")])
@@ -419,6 +424,21 @@ class AnalyzeScreen(tk.Frame):
         # Switch sang tab Tong quan de hien thi ket qua
         self.nb.select(0)
 
+        # Cập nhật last_analysis_result để nút xuất .md hoạt động
+        self.last_analysis_result = {
+            "file_name": r["file_name"],
+            "file_path": fp,
+            "file_size": r["file_size"],
+            "hashes": {"md5": "N/A", "sha1": "N/A", "sha256": r["sha256"]},
+            "strings": strings,
+            "strings_count": len(strings),
+            "pe_details": pe,
+            "entropy": r["entropy"],
+            "behaviors": r["behaviors"],
+            "risk_score": r["risk_score"],
+        }
+        self.btn_export.config(state="normal")
+
     # ─── Batch mode ──────────────────────────────────────────────
     def _run_batch(self):
         folder = self.batch_dir_var.get().strip()
@@ -481,6 +501,8 @@ class AnalyzeScreen(tk.Frame):
             ))
 
         self.batch_summary_var.set(f"Đã quét {len(results)} mẫu. Xem kết quả theo Risk Score giảm dần.")
+        if self._batch_results:
+            self.btn_export.config(state="normal", text="Xuất Báo Cáo Batch (.md)")
 
     def _export_batch_csv(self):
         if not self._batch_results:
@@ -499,9 +521,20 @@ class AnalyzeScreen(tk.Frame):
             messagebox.showerror("Lỗi", str(e))
 
     def _export_report(self):
-        if not self.last_analysis_result:
-            return
-        path = self.report_gen.generate_single_report(self.last_analysis_result, self.state.reports_dir)
+        if self.mode_var.get() == "batch":
+            if not self._batch_results:
+                messagebox.showwarning("Cảnh báo", "Chưa có kết quả batch. Chạy quét folder trước!")
+                return
+            folder = self.batch_dir_var.get().strip()
+            path = self.report_gen.generate_batch_report(
+                self._batch_results, folder, self.state.reports_dir
+            )
+        else:
+            if not self.last_analysis_result:
+                return
+            path = self.report_gen.generate_single_report(
+                self.last_analysis_result, self.state.reports_dir
+            )
         if path:
             messagebox.showinfo("Thành công", f"Báo cáo đã xuất tại:\n{path}")
         else:

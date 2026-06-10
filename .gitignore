@@ -3,6 +3,7 @@
 *.pyo
 venv/
 .venv/
+.setup_cache/
 *.log
 reports/*.md
 reports/*.csv
